@@ -1,4 +1,4 @@
-
+[![CI](https://github.com/bju12290/shopify-fishbowl-fulfillment-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/bju12290/shopify-fishbowl-fulfillment-bridge/actions/workflows/ci.yml)
 # Shopify ↔ Fishbowl Fulfillment Bridge
 
 A small Node.js service that listens for Shopify fulfillment webhooks and mirrors “fulfilled” orders into Fishbowl Advanced.
@@ -7,7 +7,6 @@ This repo includes a **fully runnable local demo** (no Shopify store / no Fishbo
 - a **Mock Fishbowl** HTTP server
 - a **Mock Shopify mode** that returns “FULFILLED” for test orders
 
-[![CI](https://github.com/bju12290/shopify-fishbowl-fulfillment-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/bju12290/shopify-fishbowl-fulfillment-bridge/actions/workflows/ci.yml)
 ---
 
 ## What this service does (MVP)
