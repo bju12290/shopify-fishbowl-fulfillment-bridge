@@ -2,6 +2,32 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 
+function now() {
+  return Date.now();
+}
+
+function parseJsonMaybe(value) {
+  if (value == null) return null;
+  if (typeof value !== 'string' || value.length === 0) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    responseJson: parseJsonMaybe(row.responseJson),
+  };
+}
+
+/**
+ * Small idempotency store for Shopify webhooks (at-least-once delivery).
+ * Uses a single SQLite file under dataDir.
+ */
 export function createIdempotencyStore({ dataDir }) {
   if (!dataDir) throw new Error('dataDir is required');
   fs.mkdirSync(dataDir, { recursive: true });
@@ -17,6 +43,7 @@ export function createIdempotencyStore({ dataDir }) {
       topic TEXT,
       shopDomain TEXT,
       orderNumber TEXT,
+      responseJson TEXT,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL,
       lastError TEXT
@@ -24,19 +51,17 @@ export function createIdempotencyStore({ dataDir }) {
     CREATE INDEX IF NOT EXISTS idx_webhook_events_orderNumber ON webhook_events(orderNumber);
   `);
 
-  const now = () => Date.now();
-
-  const getStmt = db.prepare(
-    'SELECT eventId, status, topic, shopDomain, orderNumber, createdAt, updatedAt, lastError FROM webhook_events WHERE eventId = ?'
-  );
-
   const reserveStmt = db.prepare(`
     INSERT INTO webhook_events (eventId, status, topic, shopDomain, orderNumber, createdAt, updatedAt)
     VALUES (@eventId, 'processing', @topic, @shopDomain, @orderNumber, @ts, @ts)
   `);
 
+  const getStmt = db.prepare(
+    'SELECT eventId, status, topic, shopDomain, orderNumber, responseJson, createdAt, updatedAt, lastError FROM webhook_events WHERE eventId = ?'
+  );
+
   const succeedStmt = db.prepare(
-    `UPDATE webhook_events SET status='succeeded', updatedAt=@ts WHERE eventId=@eventId`
+    `UPDATE webhook_events SET status='succeeded', responseJson=@responseJson, updatedAt=@ts WHERE eventId=@eventId`
   );
 
   const failStmt = db.prepare(
@@ -44,29 +69,71 @@ export function createIdempotencyStore({ dataDir }) {
   );
 
   return {
-    dbPath,
-    /** Returns row or null */
-    get(eventId) {
-      return getStmt.get(eventId) ?? null;
+    /**
+     * Reserve an eventId for processing. If already seen, returns reserved=false and the existing row.
+     */
+    reserve({ eventId, topic, shopDomain, orderNumber }) {
+      const existing = normalizeRow(getStmt.get(eventId));
+      if (existing) {
+        return {
+          reserved: false,
+          isDuplicate: true,
+          existing,
+          // flatten useful fields for convenience (tests/readability)
+          ...existing,
+        };
+      }
+
+      reserveStmt.run({ eventId, topic, shopDomain, orderNumber, ts: now() });
+
+      return {
+        reserved: true,
+        isDuplicate: false,
+        status: 'processing',
+        responseJson: null,
+      };
     },
 
     /**
-     * Inserts an event row in "processing" state.
-     * Returns { reserved: true } if inserted, or { reserved: false, existing: row } if already present.
+     * Mark an event as succeeded.
+     * Accepts either:
+     *  - markSucceeded(eventId)
+     *  - markSucceeded({ eventId, responseJson })
+     *  - markSucceeded(eventId, responseJson)
      */
-    reserve({ eventId, topic, shopDomain, orderNumber }) {
-      const existing = getStmt.get(eventId);
-      if (existing) return { reserved: false, existing };
-      reserveStmt.run({ eventId, topic, shopDomain, orderNumber, ts: now() });
-      return { reserved: true };
+    markSucceeded(eventIdOrObj, maybeResponseJson) {
+      let eventId = eventIdOrObj;
+      let responseJson = maybeResponseJson ?? null;
+
+      if (eventIdOrObj && typeof eventIdOrObj === 'object') {
+        eventId = eventIdOrObj.eventId;
+        responseJson = eventIdOrObj.responseJson ?? null;
+      }
+
+      const payload = responseJson == null ? null : JSON.stringify(responseJson);
+      succeedStmt.run({ eventId, responseJson: payload, ts: now() });
     },
 
-    markSucceeded(eventId) {
-      succeedStmt.run({ eventId, ts: now() });
-    },
+    /**
+     * Mark an event as failed.
+     * Accepts either:
+     *  - markFailed(eventId, errorMessage)
+     *  - markFailed({ eventId, errorMessage })
+     */
+    markFailed(eventIdOrObj, errorMessage) {
+      let eventId = eventIdOrObj;
+      let msg = errorMessage;
 
-    markFailed(eventId, errorMessage) {
-      failStmt.run({ eventId, lastError: errorMessage?.slice(0, 4000) ?? 'Unknown error', ts: now() });
+      if (eventIdOrObj && typeof eventIdOrObj === 'object') {
+        eventId = eventIdOrObj.eventId;
+        msg = eventIdOrObj.errorMessage;
+      }
+
+      failStmt.run({
+        eventId,
+        lastError: msg?.slice(0, 4000) ?? 'Unknown error',
+        ts: now(),
+      });
     },
 
     close() {
@@ -74,4 +141,3 @@ export function createIdempotencyStore({ dataDir }) {
     },
   };
 }
-

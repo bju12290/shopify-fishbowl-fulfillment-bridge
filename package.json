@@ -8,7 +8,8 @@
     "start": "node src/server.js",
     "mock:fishbowl": "node tools/mock-fishbowl.js",
     "send:webhook": "node scripts/sendTestWebhook.js --print",
-    "demo": "node scripts/demo.js"
+    "demo": "node scripts/demo.js",
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",

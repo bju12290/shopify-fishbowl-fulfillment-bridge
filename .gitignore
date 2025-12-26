@@ -1,12 +1,6 @@
 # dependencies
 node_modules/
 
-# environment
-.env
-.env.*
-!.env.example
-!.env.demo
-
 # logs
 npm-debug.log*
 yarn-debug.log*
@@ -14,16 +8,20 @@ yarn-error.log*
 pnpm-debug.log*
 *.log
 
-# runtime data
-data/
+# env files
+.env
+.env.*.local
+
+# sqlite / runtime data
+data/*.sqlite
+data/*.sqlite3
+data/*.db
+data/*.json
 !data/.gitkeep
 
-# OS/editor
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
+# coverage
+coverage/
 
-# optional build artifacts
-dist/
-build/
+# misc
+.DS_Store
+.vscode/
