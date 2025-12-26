@@ -1,0 +1,9 @@
+@"
+node_modules
+.env
+.DS_Store
+*.log
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+"@ | Out-File -Encoding utf8 .gitignore
